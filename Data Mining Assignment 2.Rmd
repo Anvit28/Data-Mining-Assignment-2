@@ -1,0 +1,396 @@
+---
+title: "Data Mining Assignment 2"
+author: ""
+date: ""
+output:
+  md_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+# ECO 395M: Exercises 2  
+## Group Members - Alina Khindanova, Anvit Sachdev, Shreya Kamble  
+## Problem 1: Saratoga house prices    
+Dataset: SaratogaHouses  
+```{r including libraries 1, echo=FALSE, message=FALSE, warning=FALSE}
+library(tidyverse)
+library(ggplot2)
+library(modelr)
+library(mosaic)
+library(rsample)
+library(caret)
+```
+First, we will convert the data into numeric form by doing label encodng.  
+```{r label encoding, , echo=FALSE, message=FALSE, warning=FALSE}
+SaratogaHouses$heating <- as.numeric(factor(SaratogaHouses$heating))
+SaratogaHouses$fuel <- as.numeric(factor(SaratogaHouses$fuel))
+SaratogaHouses$sewer <- as.numeric(factor(SaratogaHouses$sewer))
+SaratogaHouses$waterfront <- as.numeric(factor(SaratogaHouses$waterfront))
+SaratogaHouses$newConstruction <- as.numeric(factor(SaratogaHouses$newConstruction))
+SaratogaHouses$centralAir <- as.numeric(factor(SaratogaHouses$centralAir))
+```
+Next, we split the data into training and test data. The training data comprises of 80% of overall data, and test data comprises of remaining 40% of the data.  
+```{r splitting into training and test data,echo=FALSE, message=FALSE, warning=FALSE}
+set.seed(123)
+saratoga_split = initial_split(SaratogaHouses, prop = 0.8, list = FALSE)
+saratoga_train = training(saratoga_split)
+saratoga_test = testing(saratoga_split)
+```
+Next, we standardize the data to account for large differences.  
+```{r satandardizing the data,echo=FALSE, message=FALSE, warning=FALSE}
+saratoga_houses2 <- SaratogaHouses %>% mutate_all(~(scale(.) %>% as.vector))
+saratoga_train2 <- saratoga_train %>% mutate_all(~(scale(.) %>% as.vector))
+saratoga_test2 <- saratoga_test %>% mutate_all(~(scale(.) %>% as.vector))
+```
+Now we start with creating the models.To evaluate the models, we compare the out-of-sample mean-squared error.  
+We will first check the performance of the "medium" model that we considered in class.  
+```{r class model,echo=FALSE, message=FALSE, warning=FALSE, results='hide'}
+lm_c = train(
+  price ~ . - pctCollege - sewer - waterfront - landValue - newConstruction, data=saratoga_train2,
+  method = "lm",
+  trControl = trainControl(method = "cv",
+              number = 10, verboseIter = TRUE))
+```
+```{r class model result,echo=FALSE, message=FALSE, warning=FALSE}
+print(paste0("The out-of-sample Root Mean-Squared Error of the medium model that we considered in class is: ",rmse(lm_c,saratoga_test2)))
+```
+*Best Linear Model*  
+We create the best linear model by removing the features fireplaces, pctCollege, fuel, sewer, waterfront, centralAir, and landValue. We also create a new feature given by diving bathrooms/bedrooms; that measures the proportion of bathrooms available per bathroom for the house. Finally since the landValue of the house is a big factor in determing the price, so we scale all these features by landValue.    
+```{r my model,echo=FALSE, message=FALSE, warning=FALSE, results='hide'}
+lm_me = train(
+  price ~(. - fireplaces - pctCollege - fuel - sewer - waterfront - centralAir - landValue + bathrooms/bedrooms) *(landValue), data=saratoga_train2,
+  method = "lm",
+  trControl = trainControl(method = "cv",
+                           number = 10, verboseIter = TRUE))
+```
+```{r my model result,echo=FALSE, message=FALSE, warning=FALSE}
+print(paste0("The out-of-sample Root Mean-Squared Error of the best linear model is: ",rmse(lm_me,saratoga_test2)))
+```
+We can see that the out-of-sample Root Mean-Squared Error of the best linear model is lower than the the medium model that we considered in class. Thus it outperforms the medium model that we considered in class.  
+*The best K-nearest-neighbor regression model*  
+We form the K-nearest-neighbor regression model by including the same features as out best linear model, except that the model that we now use is KNN regression model.  
+```{r KNN, echo=FALSE, message=FALSE, warning=FALSE}
+K_values <- c(2:200)
+RMSE <- c()
+for (i in K_values){
+
+#run KNN models
+  knn = knnreg(price ~(. - fireplaces - pctCollege - fuel - sewer - waterfront - centralAir - landValue + bathrooms/bedrooms)*landValue, data= saratoga_train2, k=i)
+  #made a vector of RMSE values
+  e <- modelr::rmse(knn,saratoga_test2)
+  RMSE <- c(RMSE,e)
+}
+
+
+dataframe <- data.frame(K_values, RMSE) 
+ggplot(dataframe) +
+  geom_line(aes(x=K_values, y=RMSE)) +
+  xlab("Values of K") + ylab("RMSE") + 
+  ggtitle("Plot of RMSE versus K for trim=350")
+
+#found optimal value of K
+minimum <- min(dataframe$RMSE)
+K <- K_values[dataframe$RMSE == minimum]
+print(paste0("The optimal value of K is: ", K))
+print(paste0("The Root Mean Squared Error of the best K-nearest-neighbor regression model for the optimal value of K on test set is: ",minimum))
+```
+We can see that the out-of-sample Root Mean-Squared Error of the best K-nearest-neighbor regression model is lower than the best linear model. Thus it outperforms the best linear model.  
+In this model we try to emphasize on the most effective factors on property prices. We observe that the prices depend more on the factors like lot size,age,bedrooms, bathrooms, new construction, and living area. We believe that all these variables depend on the land value, so we took that under consideration. We came up with this model because these can be considered as most common factors on pricing strategy. Also land value plays an important role in determining the pricing so we have included that as well in our predictive model in how each effect of variables would change depending on the value of the property land. We can predict the  price of property house if we know only these data , this can be considered as factors having good price estimation. Adding other variables might affect our model. So the tax authority could use the data to know whether the market price is overvalued or undervalued and use these information to create the best pricing estimation for taxing purposes.   
+## Problem 2: Classification and retrospective sampling  
+
+Dataset: german_credit.csv
+
+```{r echo=FALSE, warning=FALSE, message=FALSE}
+library(dplyr)
+library(tidyverse)
+
+german_credit <- read.csv("https://raw.githubusercontent.com/jgscott/ECO395M/master/data/german_credit.csv", sep = ",", dec = ".")
+
+#  a bar plot of default probability by credit history
+
+german_credit %>%
+  group_by(history) %>%
+    summarise(default_probability = mean(Default)) %>%
+      ggplot(aes(x=history, y=default_probability)) +
+      geom_bar(stat="identity")
+
+```
+
+Figure 1. A bar plot of default probability by credit history
+
+```{r echo=FALSE, warning=FALSE, message=FALSE, results='hide'}
+# a logistic regression model for predicting default probability
+model <- glm(Default ~ duration + amount + installment + age + history + purpose + foreign, 
+         data = german_credit,family = binomial)
+coef(model)
+
+```
+
+We build a logistic regression model for predicting default probability, using the variables duration + amount + installment + age + history + purpose + foreign. The results shows that the probability of default is higher for a person with good history in comparison to a person with poor or terrible history. This result is counter intuitive, and we think that this data set is not appropriate for building a predictive model of defaults. That is because the sample is biased, and we could use randomized sample to get correct model.  
+```{r installing packages 1, echo=FALSE, message=FALSE, warning=FALSE}
+install.packages("tidyverse",dependencies = TRUE)
+```
+## Problem 3: Children and hotel reservations  
+Dataset: hotels_dev.csv and hotels_val.csv
+```{r importing libraries 2, echo=FALSE, message=FALSE, warning=FALSE}
+library(tidyverse)
+library(dplyr)
+```
+```{r Reading Dataset 3, echo=FALSE, warning=FALSE}
+hotels_dev = read.csv("https://raw.githubusercontent.com/jgscott/ECO395M/master/data/hotels_dev.csv")
+hotels_dev2=hotels_dev
+```
+First, we will convert the data into numeric form by doing label encodng.  
+```{r label encoding 4, echo=FALSE, message=FALSE, warning=FALSE}
+hotels_dev$market_segment <- as.numeric(factor(hotels_dev$market_segment))
+hotels_dev$customer_type <- as.numeric(factor(hotels_dev$customer_type))
+hotels_dev$hotel <- as.numeric(factor(hotels_dev$hotel))
+hotels_dev$meal <- as.numeric(factor(hotels_dev$meal))
+hotels_dev$distribution_channel <- as.numeric(factor(hotels_dev$distribution_channel))
+hotels_dev$reserved_room_type <- as.numeric(factor(hotels_dev$reserved_room_type))
+hotels_dev$assigned_room_type <- as.numeric(factor(hotels_dev$assigned_room_type))
+hotels_dev$deposit_type <- as.numeric(factor(hotels_dev$deposit_type))
+hotels_dev$required_car_parking_spaces <- as.numeric(factor(hotels_dev$required_car_parking_spaces))
+```
+Next, we check the number of data points in each class (i.e., children=0 and children=1) in the data.  
+```{r summarizing data 5, echo=FALSE, message=FALSE, warning=FALSE}
+table(hotels_dev$children)
+```
+We can see that the data is imbalanced. It comprises of more than 90% data points that have zero children.  
+To resolve this problem, I formed training set with 6000 data points with zero children, and 3000 data points with one children. So the training set has two-thirds of the data points with zero children, and one-third of the data points with at least one children. The test data is comprised of 2000 data points with zero children, and 650 data points with one children.  
+```{r forming training and test data 6, echo=FALSE, message=FALSE, warning=FALSE}
+set.seed(12345) 
+hotels_dev=sample_n(hotels_dev,nrow(hotels_dev))
+class_1=hotels_dev[hotels_dev$children==1,]
+train_1=class_1[0:3000,]
+test_1=class_1[3001:3650,]
+class_0=hotels_dev[hotels_dev$children==0,]
+train_0=class_0[0:6000,]
+test_0=class_0[6001:8000,]
+training_data=rbind(train_0,train_1)
+set.seed(12345)
+training_data=sample_n(training_data,nrow(training_data))
+test_data=rbind(test_0,test_1)
+set.seed(12345)
+test_data=sample_n(test_data,nrow(test_data))
+```
+Now we start with creating the models.  
+To evaluate the models, we calculate the out-sample confusion matrix, accuracy, precision, recall and F1 Score, which are given as:-  
+Accuracy = (True Positive+True Negative)/(True Positive+False Positive+True Negative+False Negative)  
+Precision = True Positive / (True Positive+False Positive)  
+Recall = True Positive / (True Positive+False Negative)  
+F1 Score = (2 * Precision * Recall)/(Precision + Recall)  
+The baseline 1 model is the logistic regression model with market_segment, adults, customer_type, and is_repeated_guest variables as features.  
+```{r baseline 1 model, echo=FALSE, message=FALSE, warning=FALSE}
+baseline1=glm(children ~ market_segment + adults + customer_type + is_repeated_guest, data=training_data,family = 'binomial')
+```
+Let's look at the in-sample and out-sample performance of baseline 1 model.  
+```{r in-sample performance of baseline 1 model, echo=FALSE, message=FALSE, warning=FALSE}
+predicted_children_probabilities=baseline1 %>% predict(training_data,type="response")
+predicted_children = ifelse(predicted_children_probabilities>0.5,1,0)
+confusion_in=table(y=training_data$children,yhat=predicted_children)
+print("The in-sample confusion matrix of baseline 1 model is:-")
+print(confusion_in)
+print(paste0("The in-sample accuracy of baseline 1 model is: ", sum(diag(confusion_in))/sum(confusion_in)))
+```
+```{r out-of-sample performance of baseline 1 model, echo=FALSE, message=FALSE, warning=FALSE}
+predicted_children_probabilities=baseline1 %>% predict(test_data,type="response")
+predicted_children = ifelse(predicted_children_probabilities>0.5,1,0)
+print("The out-of-sample confusion matrix of baseline 1 model is:-")
+confusion_out=table(y=test_data$children,yhat=predicted_children)
+print(confusion_out)
+baseline1_accuracy=sum(diag(confusion_out))/sum(confusion_out)
+print(paste0("The out-of-sample accuracy of baseline 1 model is: ",baseline1_accuracy))
+baseline1_precision=confusion_out[4]/(confusion_out[3]+confusion_out[4])
+baseline1_recall=confusion_out[4]/(confusion_out[2]+confusion_out[4])
+baseline1_f1score=2*baseline1_precision*baseline1_recall/(baseline1_precision+baseline1_recall)
+print(paste0("The out-of-sample precision of baseline 1 model is: ",baseline1_precision))
+print(paste0("The out-of-sample recall of baseline 1 model is: ",baseline1_recall))
+print(paste0("The out-of-sample F1 Score of baseline 1 model is: ",baseline1_f1score))
+```
+We can see from the above result that the baseline 1 model has a decent accuracy but very low precision, recall and F1 Score. This is because this model is unable to accurately predict the data points with at least one children.  
+  
+The baseline 2 model is the logistic regression model with that uses all the possible predictors except the arrival_date variable. Let's look at the in-sample and out-sample performance of baseline 2 model.  
+```{r forming training and test data for baseline 2 model, echo=FALSE, message=FALSE, warning=FALSE}
+training_data2=subset(training_data,select=-c(arrival_date))
+test_data2=subset(test_data,select=-c(arrival_date))
+```
+```{r forming baseline 2 model, echo=FALSE, message=FALSE, warning=FALSE}
+baseline2=glm(children ~ ., data=training_data2,family = 'binomial')
+```
+```{r in-sample performance of baseline 2 model, echo=FALSE, message=FALSE, warning=FALSE}
+predicted_children_probabilities=baseline2 %>% predict(training_data2,type="response")
+predicted_children = ifelse(predicted_children_probabilities>0.5,1,0)
+confusion_in=table(y=training_data2$children,yhat=predicted_children)
+print("The in-sample confusion matrix of baseline 2 model is:-")
+print(confusion_in)
+print(paste0("The in-sample accuracy of baseline 2 model is: ", sum(diag(confusion_in))/sum(confusion_in)))
+```
+```{r out-of-sample performance of baseline 2 model, echo=FALSE, message=FALSE, warning=FALSE}
+predicted_children_probabilities=baseline2 %>% predict(test_data2,type="response")
+predicted_children = ifelse(predicted_children_probabilities>0.5,1,0)
+confusion_out=table(y=test_data2$children,yhat=predicted_children)
+print("The out-of-sample confusion matrix of baseline 2 model is:-")
+print(confusion_out)
+baseline2_accuracy=sum(diag(confusion_out))/sum(confusion_out)
+print(paste0("The out-of-sample accuracy of baseline 2 model is: ",baseline2_accuracy))
+baseline2_precision=confusion_out[4]/(confusion_out[3]+confusion_out[4])
+baseline2_recall=confusion_out[4]/(confusion_out[2]+confusion_out[4])
+baseline2_f1score=2*baseline2_precision*baseline2_recall/(baseline2_precision+baseline2_recall)
+print(paste0("The out-of-sample precision of baseline 2 model is: ",baseline2_precision))
+print(paste0("The out-of-sample recall of baseline 2 model is: ",baseline2_recall))
+print(paste0("The out-of-sample F1 Score of baseline 2 model is: ",baseline2_f1score))
+```
+We can see that the baseline 2 model performs better than baseline 1 model.  
+```{r baseline 2 v/s baseline 1, echo=FALSE, message=FALSE, warning=FALSE}
+print(paste0("Its absolute improvement in terms of out-of-sample accuracy is approximately ", baseline2_accuracy-baseline1_accuracy))
+print(paste0("Its relative improvement in terms of out-of-sample accuracy is approximately ", baseline2_accuracy/baseline1_accuracy))
+print(paste0("Its absolute improvement in terms of out-of-sample F1 Score is approximately ", baseline2_f1score-baseline1_f1score))
+print(paste0("Its relative improvement in terms of out-of-sample F1 Score is approximately ", baseline2_f1score/baseline1_f1score))
+```
+```{r loading library, echo=FALSE, message=FALSE, warning=FALSE}
+library(lubridate)
+```
+To create the best linear model, we derive a new feature (called as is_holiday) from the arrival_date variable. This feature is a dummy variable that takes the value 1 when the arrival date happens during school summer break (i.e, during May, June, July and August); and Christmas break (i.e, from Dec 25 to Dec 31). It makes sense to introduce this feature as school going children usually make trips with their family during this time.  
+```{r creating the feature atleast_2_adults, echo=FALSE, message=FALSE, warning=FALSE}
+#hotels_dev['Atleast_2_Adults']=ifelse(hotels_dev$adults>=2,1,0)
+```
+```{r creating the feature is_holiday, echo=FALSE, message=FALSE, warning=FALSE}
+holiday=ifelse((month(hotels_dev$arrival_date)>=5 & month(hotels_dev$arrival_date)<=8) | (month(hotels_dev$arrival_date)==12 & format(as.Date(hotels_dev$arrival_date), format = "%d")>=25),1,0)
+hotels_dev['is_holiday']=holiday
+```
+```{r forming training and test data, echo=FALSE, message=FALSE, warning=FALSE}
+set.seed(12345) 
+hotels_dev=sample_n(hotels_dev,nrow(hotels_dev))
+class_1=hotels_dev[hotels_dev$children==1,]
+train_1=class_1[0:3000,]
+test_1=class_1[3001:3650,]
+class_0=hotels_dev[hotels_dev$children==0,]
+train_0=class_0[0:6000,]
+test_0=class_0[6001:8000,]
+training_data=rbind(train_0,train_1)
+set.seed(12345)
+training_data=sample_n(training_data,nrow(training_data))
+test_data=rbind(test_0,test_1)
+set.seed(12345)
+test_data=sample_n(test_data,nrow(test_data))
+```
+```{r creating training and test data for the best linear model, echo=FALSE, message=FALSE, warning=FALSE}
+training_data3=subset(training_data,select=-c(arrival_date))
+test_data3=subset(test_data,select=-c(arrival_date))
+```
+```{r introducing best linear model, echo=FALSE, message=FALSE, warning=FALSE}
+best_model=glm(children ~ ., data=training_data3,family = 'binomial')
+```
+
+```{r in-sample performance of best linear model, echo=FALSE, message=FALSE, warning=FALSE}
+predicted_children_probabilities=best_model %>% predict(training_data3,type="response")
+predicted_children = ifelse(predicted_children_probabilities>0.5,1,0)
+confusion_in=table(y=training_data3$children,yhat=predicted_children)
+print("The in-sample confusion matrix of the best linear model is:-")
+print(confusion_in)
+print(paste0("The in-sample accuracy of the best linear model is: ", sum(diag(confusion_in))/sum(confusion_in)))
+```
+```{r out-of-sample performance of best linear model, echo=FALSE, message=FALSE, warning=FALSE}
+predicted_children_probabilities=best_model %>% predict(test_data3,type="response")
+predicted_children = ifelse(predicted_children_probabilities>0.5,1,0)
+confusion_out=table(y=test_data3$children,yhat=predicted_children)
+print("The out-of-sample confusion matrix of the best linear model is:-")
+print(confusion_out)
+bestmodel_accuracy=sum(diag(confusion_out))/sum(confusion_out)
+print(paste0("The out-of-sample accuracy of the best linear model is: ",bestmodel_accuracy))
+bestmodel_precision=confusion_out[4]/(confusion_out[3]+confusion_out[4])
+bestmodel_recall=confusion_out[4]/(confusion_out[2]+confusion_out[4])
+bestmodel_f1score=2*bestmodel_precision*bestmodel_recall/(bestmodel_precision+bestmodel_recall)
+print(paste0("The out-of-sample precision of the best linear model is: ",bestmodel_precision))
+print(paste0("The out-of-sample recall of the best linear model is: ",bestmodel_recall))
+print(paste0("The out-of-sample F1 Score of the best linear model is: ",bestmodel_f1score))
+```
+We can see that the best linear model performs better than the baseline 2 model.  
+```{r best linear model v/s baseline 1, echo=FALSE, message=FALSE, warning=FALSE}
+print(paste0("Its absolute improvement in terms of out-of-sample accuracy is approximately ", bestmodel_accuracy-baseline2_accuracy))
+print(paste0("Its relative improvement in terms of out-of-sample accuracy is approximately ", bestmodel_accuracy/baseline2_accuracy))
+print(paste0("Its absolute improvement in terms of out-of-sample F1 Score is approximately ", bestmodel_f1score-baseline2_f1score))
+print(paste0("Its relative improvement in terms of out-of-sample F1 Score is approximately ", bestmodel_f1score/baseline2_f1score))
+```
+### Model Validation Step 1: Performance of the Best Linear Model on hotel_val data
+```{r Model Validation Step 1, echo=FALSE, message=FALSE, warning=FALSE}
+hotels_val = read.csv("https://raw.githubusercontent.com/jgscott/ECO395M/master/data/hotels_val.csv")
+```
+```{r label enconding of hotel_val,  echo=FALSE, message=FALSE, warning=FALSE}
+hotels_val$market_segment <- as.numeric(factor(hotels_val$market_segment))
+hotels_val$customer_type <- as.numeric(factor(hotels_val$customer_type))
+#print(hotels_dev)
+hotels_val$hotel <- as.numeric(factor(hotels_val$hotel))
+hotels_val$meal <- as.numeric(factor(hotels_val$meal))
+hotels_val$distribution_channel <- as.numeric(factor(hotels_val$distribution_channel))
+hotels_val$reserved_room_type <- as.numeric(factor(hotels_val$reserved_room_type))
+hotels_val$assigned_room_type <- as.numeric(factor(hotels_val$assigned_room_type))
+hotels_val$deposit_type <- as.numeric(factor(hotels_val$deposit_type))
+hotels_val$required_car_parking_spaces <- as.numeric(factor(hotels_val$required_car_parking_spaces))
+```
+```{r adding is_holiday feature to hotel_val, echo=FALSE, message=FALSE, warning=FALSE}
+holiday=ifelse((month(hotels_val$arrival_date)>=5 & month(hotels_val$arrival_date)<=8) | (month(hotels_val$arrival_date)==12 & format(as.Date(hotels_val$arrival_date), format = "%d")>=25),1,0)
+hotels_val['is_holiday']=holiday
+```
+```{r adding atleast_2_adults feature to hotel_val, echo=FALSE, message=FALSE, warning=FALSE}
+#hotels_val['Atleast_2_Adults']=ifelse(hotels_val$adults>=2,1,0)
+```
+```{r Performance of best linear model on hotel_val data, echo=FALSE, message=FALSE, warning=FALSE}
+predicted_children_probabilities=best_model %>% predict(hotels_val,type="response")
+predicted_children = ifelse(predicted_children_probabilities>0.5,1,0)
+confusion_out=table(y=hotels_val$children,yhat=predicted_children)
+print("The confusion matrix of the best linear model is:-")
+print(confusion_out)
+print(paste0("The accuracy of the best linear model is: ",sum(diag(confusion_out))/sum(confusion_out)))
+bestmodel_precision=confusion_out[4]/(confusion_out[3]+confusion_out[4])
+bestmodel_recall=confusion_out[4]/(confusion_out[2]+confusion_out[4])
+bestmodel_f1score=2*bestmodel_precision*bestmodel_recall/(bestmodel_precision+bestmodel_recall)
+print(paste0("The precision of the best linear model is: ",bestmodel_precision))
+print(paste0("The recall of the best linear model is: ",bestmodel_recall))
+print(paste0("The F1 Score of the best linear model is: ",bestmodel_f1score))
+```
+We can see that the best linear model gives decent recall but has low precision. That means, it is identifying many false positives.  
+```{r loading library pROC, echo=FALSE, message=FALSE, warning=FALSE}
+library(pROC)
+```
+The ROC curve for the best model, using the data in hotels_val is:-    
+```{r ROC Curve, echo=FALSE, message=FALSE, warning=FALSE}
+roc_score=roc(hotels_val$children, predicted_children)
+plot(roc_score ,main ="ROC curve")
+```
+  
+We can see that the ROC curve is towards top-left of the 45-degree diagonal of the ROC space. The closer the curve comes to the 45-degree diagonal of the ROC space, the less accurate the test.
+```{r installing package, echo=FALSE, message=FALSE, warning=FALSE}
+install.packages("caret")
+```
+```{r loading libraries, echo=FALSE, message=FALSE, warning=FALSE}
+library(caret)
+library(groupdata2)
+```
+### Model Validation Step 2
+```{r Model Validation Step 2, echo=FALSE, message=FALSE, warning=FALSE}
+hotels_val_folds=fold(data=hotels_val,k=20)
+```
+```{r expected and total booking with children part 1, echo=FALSE, message=FALSE, warning=FALSE}
+expected_booking=c()
+actual_booking=c()
+fold_number=c()
+for (i in 1:20){
+  fold=hotels_val_folds[hotels_val_folds$.folds==i,]
+  predicted_children_probabilities=best_model %>% predict(fold,type="response")
+  fold_number=append(fold_number,i)
+  expected_booking=append(expected_booking,sum(predicted_children_probabilities))
+  actual_booking=append(actual_booking,nrow(fold[fold$children==1,]))
+}
+```
+```{r expected and total booking with children part 2, echo=FALSE, message=FALSE, warning=FALSE}
+df = data.frame(fold_number,actual_booking,expected_booking)
+df
+```
+  
+We can see that the expected number of bookings with children in a fold is relatively higher than the actual number of bookings with children in that fold. This indicates that there are too many false positives in the model.  
+  
+Note that the expected number of bookings with children in a fold can become close to the actual number of bookings with children in that fold by adding more data points with zero children in the training data. However, this will increase the false negatives in the data. Thus there exists a trade-off between the two. The optimal problem should be the choice of total number of data points with zero children that should be included in the data such that F1 score is maximized. 
