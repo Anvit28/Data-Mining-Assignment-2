@@ -169,6 +169,7 @@ precision. That means, it is identifying many false positives.
 
 The ROC curve for the best model, using the data in hotels\_val is:-  
 ![](Assignment-2-Problem-3_files/figure-markdown_strict/ROC%20Curve-1.png)
+
 We can see that the ROC curve is towards top-left of the 45-degree
 diagonal of the ROC space. The closer the curve comes to the 45-degree
 diagonal of the ROC space, the less accurate the test.

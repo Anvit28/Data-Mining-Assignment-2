@@ -236,11 +236,12 @@ We can see that the best linear model gives decent recall but has low precision.
 ```{r loading library pROC, echo=FALSE, message=FALSE, warning=FALSE}
 library(pROC)
 ```
-The ROC curve for the best model, using the data in hotels_val is:-  
+The ROC curve for the best model, using the data in hotels_val is:-    
 ```{r ROC Curve, echo=FALSE, message=FALSE, warning=FALSE}
 roc_score=roc(hotels_val$children, predicted_children)
 plot(roc_score ,main ="ROC curve")
 ```
+  
 We can see that the ROC curve is towards top-left of the 45-degree diagonal of the ROC space. The closer the curve comes to the 45-degree diagonal of the ROC space, the less accurate the test.
 ```{r installing package, echo=FALSE, message=FALSE, warning=FALSE}
 install.packages("caret")
@@ -269,4 +270,5 @@ for (i in 1:20){
 df = data.frame(fold_number,actual_booking,expected_booking)
 df
 ```
+  
 We can see that the expected number of bookings with children in a fold is relatively higher than the actual number of bookings with children in that fold. This indicates that there are too many false positives in the model.  
