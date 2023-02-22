@@ -17,8 +17,8 @@ data points that have zero children.
 To resolve this problem, I formed training set with 6000 data points
 with zero children, and 3000 data points with one children. So the
 training set has two-thirds of the data points with zero children, and
-one-third of the data points with at least one children. The test data i
-comprised of 2000 data points with zero children, and 650 data points
+one-third of the data points with at least one children. The test data
+is comprised of 2000 data points with zero children, and 650 data points
 with one children.
 
 Now we start with creating the models.  
@@ -76,7 +76,7 @@ the in-sample and out-sample performance of baseline 2 model.
     ##   0 5347  653
     ##   1 1417 1583
 
-    ## [1] "The in-sample accuracy of baseline 1 model is: 0.77"
+    ## [1] "The in-sample accuracy of baseline 2 model is: 0.77"
 
     ## [1] "The out-of-sample confusion matrix of baseline 2 model is:-"
 
@@ -202,3 +202,11 @@ We can see that the expected number of bookings with children in a fold
 is relatively higher than the actual number of bookings with children in
 that fold. This indicates that there are too many false positives in the
 model.
+
+Note that the expected number of bookings with children in a fold can
+become close to the actual number of bookings with children in that fold
+by adding more data points with zero children in the training data.
+However, this will increase the false negatives in the data. Thus there
+exists a trade-off between the two. The optimal problem should be the
+choice of total number of data points with zero children that should be
+included in the data such that F1 score is maximized.
